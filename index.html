@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dispensador (remoto)</title>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<style>
+body{font-family:sans-serif;margin:0;padding:12px;background:#f3f4f6;color:#222}
+h1{font-size:1.3rem;margin:4px 0 12px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.card{background:#fff;border-radius:10px;padding:12px;margin-bottom:8px;box-shadow:0 1px 3px #0002}
+.card small{color:#666;display:block}.card b{font-size:1.3rem}
+button{padding:10px 14px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-size:1rem;margin:3px 3px 3px 0}
+button.del{background:#dc2626;padding:6px 10px}
+input{padding:8px;font-size:1rem;margin:3px 0;width:100%;box-sizing:border-box}
+input.n{width:64px}
+img{width:100%;border-radius:8px;background:#ddd;min-height:60px;margin-top:8px}
+.fila{display:flex;justify-content:space-between;align-items:center;padding:4px 0}
+#conn{font-size:.9rem;margin-bottom:8px}
+#msg{color:#047857;min-height:1.2em}
+.ok{color:#047857}.mal{color:#b91c1c}
+</style></head><body>
+<h1>🐾 Dispensador (acceso remoto)</h1>
+<div id="conn">Sin conectar</div>
+
+<div class="card" id="login">
+ <b>Conexión a la nube</b>
+ <input id="host" placeholder="Host: ta6772e8.ala.us-east-1.emqxsl.com">
+ <input id="user" placeholder="Usuario MQTT">
+ <input id="pass" type="password" placeholder="Contraseña MQTT">
+ <button onclick="conectar()">Conectar</button>
+ <small>Los datos se guardan solo en este navegador.</small>
+</div>
+
+<div class="grid">
+ <div class="card"><small>🕒 Hora del dispensador</small><b id="hora">--</b></div>
+ <div class="card"><small>Estado</small><b id="est">--</b></div>
+ <div class="card"><small>🍖 Alimento</small><b id="g">--</b></div>
+ <div class="card"><small>💧 Agua</small><b id="agua">--</b></div>
+</div>
+<div class="card"><small>Dispositivo</small><b id="online">--</b></div>
+
+<div class="card">
+ <button onclick="alimentar()">🍽️ Alimentar ahora</button>
+ <button onclick="pedirFoto()">📷 Tomar foto</button>
+ <div id="msg"></div>
+ <img id="foto" alt="Aún no hay foto">
+ <small id="fotohora"></small>
+</div>
+
+<div class="card"><b>⏰ Horarios</b>
+ <div style="margin:8px 0">
+  <input class="n" id="hh" type="number" min="0" max="23" value="8"> :
+  <input class="n" id="mm" type="number" min="0" max="59" value="0">
+  <button onclick="addHorario()">Agregar</button>
+ </div>
+ <div id="lista"></div>
+</div>
+
+<script>
+const T='dispensador/';
+const $=id=>document.getElementById(id);
+let cli=null,fotoURL=null;
+
+function msg(t){$('msg').textContent=t;setTimeout(()=>{if($('msg').textContent===t)$('msg').textContent=''},4000)}
+function setConn(t,ok){$('conn').textContent=t;$('conn').className=ok?'ok':'mal'}
+
+function conectar(){
+ const host=$('host').value.trim(),user=$('user').value.trim(),pass=$('pass').value;
+ if(!host||!user||!pass){setConn('Completa host, usuario y contraseña',false);return}
+ localStorage.setItem('cfg',JSON.stringify({host,user,pass}));
+ if(cli){cli.end(true)}
+ setConn('Conectando...',false);
+ cli=mqtt.connect('wss://'+host+':8084/mqtt',{
+  username:user,password:pass,
+  clientId:'web-'+Math.random().toString(16).slice(2,8),
+  reconnectPeriod:4000,connectTimeout:8000});
+ cli.on('connect',()=>{
+  setConn('✅ Conectado a la nube',true);
+  $('login').style.display='none';
+  cli.subscribe([T+'estado',T+'horarios',T+'foto',T+'online']);
+ });
+ cli.on('reconnect',()=>setConn('Reconectando...',false));
+ cli.on('close',()=>setConn('Desconectado',false));
+ cli.on('error',e=>{setConn('Error: '+e.message,false);$('login').style.display='block'});
+ cli.on('message',(topic,p)=>{
+  if(topic===T+'foto'){
+   if(fotoURL)URL.revokeObjectURL(fotoURL);
+   fotoURL=URL.createObjectURL(new Blob([p],{type:'image/jpeg'}));
+   $('foto').src=fotoURL;
+   $('fotohora').textContent='Foto recibida: '+new Date().toLocaleTimeString();
+   return;
+  }
+  const s=p.toString();
+  if(topic===T+'online'){
+   $('online').textContent=s==='1'?'🟢 En línea':'🔴 Sin conexión';
+  }else if(topic===T+'estado'){
+   try{const e=JSON.parse(s);
+    $('hora').textContent=e.hora.replace('T',' ');
+    $('g').textContent=e.g.toFixed(0)+' g';
+    $('agua').textContent=e.agua===null?'N/D':e.agua.toFixed(0)+' %';
+    $('est').textContent=e.alerta?'🔴 ALERTA':'🟢 Normal';
+   }catch(x){}
+  }else if(topic===T+'horarios'){
+   try{pintarHorarios(JSON.parse(s))}catch(x){}
+  }
+ });
+}
+
+function pintarHorarios(l){
+ $('lista').innerHTML=l.length?'':'<small>No hay horarios programados.</small>';
+ l.forEach(h=>{
+  const d=document.createElement('div');d.className='fila';
+  d.innerHTML=`<span>🕗 ${String(h.h).padStart(2,'0')}:${String(h.m).padStart(2,'0')}</span>`;
+  const b=document.createElement('button');b.className='del';b.textContent='Eliminar';
+  b.onclick=()=>{cli.publish(T+'cmd/horario/del',String(h.i));msg('Eliminando...')};
+  d.appendChild(b);$('lista').appendChild(d);
+ });
+}
+function pub(t,p,m){
+ if(!cli||!cli.connected){msg('No conectado a la nube');return}
+ cli.publish(T+t,p);msg(m);
+}
+function alimentar(){pub('cmd/alimentar','1','Orden enviada')}
+function pedirFoto(){pub('cmd/foto','1','Foto solicitada, llega en unos segundos')}
+function addHorario(){
+ const h=String(+$('hh').value).padStart(2,'0'),m=String(+$('mm').value).padStart(2,'0');
+ pub('cmd/horario/add',h+':'+m,'Horario enviado');
+}
+
+try{
+ const c=JSON.parse(localStorage.getItem('cfg')||'null');
+ if(c){$('host').value=c.host;$('user').value=c.user;$('pass').value=c.pass;conectar()}
+}catch(x){}
+</script></body></html>
