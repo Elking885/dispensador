@@ -13,6 +13,9 @@ h1{font-size:1.3rem;margin:4px 0 12px}
 .barra{height:8px;background:#e5e7eb;border-radius:4px;margin-top:6px;overflow:hidden;display:none}
 .barra div{height:100%;width:0;background:#16a34a;transition:width .3s}
 .barra.agua div{background:#0ea5e9}
+.tanque{display:flex;flex-direction:column-reverse;gap:4px;width:46px;height:86px;padding:4px;border:2px solid #9ca3af;border-radius:8px;flex:none}
+.tanque div{flex:1;border-radius:4px;background:#e5e7eb;transition:background .3s}
+.almacen{display:flex;align-items:center;gap:14px;margin-top:6px}
 button{padding:10px 14px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-size:1rem;margin:3px 3px 3px 0}
 button.del{background:#dc2626;padding:6px 10px}
 input{padding:8px;font-size:1rem;margin:3px 0;width:100%;box-sizing:border-box}
@@ -42,6 +45,14 @@ img{width:100%;border-radius:8px;background:#ddd;min-height:60px;margin-top:8px}
   <div class="barra" id="barra"><div id="barraIn"></div></div><small id="gx"></small></div>
  <div class="card"><small>💧 Agua (cámara)</small><b id="agua">--</b>
   <div class="barra agua" id="barraA" style="display:block"><div id="barraAIn"></div></div><small id="aguax"></small></div>
+</div>
+<div class="card"><small>📦 Almacén de alimento (3 sensores infrarrojos)</small>
+ <div class="almacen">
+  <div class="tanque" title="Sensores: abajo = bajo, medio = mitad, arriba = lleno">
+   <div id="s1"></div><div id="s2"></div><div id="s3"></div>
+  </div>
+  <div><b id="almNivel">--</b><small id="almx"></small></div>
+ </div>
 </div>
 <div class="grid">
  <div class="card"><small>Dispensador</small><b id="online">--</b></div>
@@ -82,7 +93,25 @@ function msg(t){$('msg').textContent=t;setTimeout(()=>{if($('msg').textContent==
 function setConn(t,ok){$('conn').textContent=t;$('conn').className=ok?'ok':'mal'}
 
 // Peso en tiempo real: mientras "dispensando" es true, el ESP32 publica cada ~400 ms.
+// Nivel del almacen segun los 3 sensores IR (campo "niv" del ESP32):
+// -1 sin sensores, 0 vacio (ningun sensor ve comida), 1 bajo (solo el de abajo),
+// 2 a la mitad (abajo y medio), 3 lleno (los tres).
+const NIVELES=[
+ {txt:'🔴 Vacío',color:'#dc2626',nota:'Ningún sensor detecta comida: rellena el almacén'},
+ {txt:'🟠 Bajo',color:'#f97316',nota:'Solo el sensor de abajo detecta comida: queda poco'},
+ {txt:'🟡 A la mitad',color:'#eab308',nota:'Detectan los sensores de abajo y del medio'},
+ {txt:'🟢 Lleno',color:'#16a34a',nota:'Los tres sensores detectan comida'}];
+function pintarAlmacen(e){
+ const n=(typeof e.niv==='number')?e.niv:-1;
+ ['s1','s2','s3'].forEach((id,i)=>{$(id).style.background=(n>i)?NIVELES[n].color:'#e5e7eb'});
+ if(n<0||n>3){$('almNivel').textContent='Sin sensores';$('almx').textContent='';return}
+ $('almNivel').textContent=NIVELES[n].txt;
+ let nota=NIVELES[n].nota;
+ if(e.vacio)nota+=' · ⚠️ en la última ración no cayó comida (vacío o atascado)';
+ $('almx').textContent=nota;
+}
 function pintarEstado(e){
+ pintarAlmacen(e);
  ultEstado=Date.now();
  const d=!!e.dispensando;
  $('hora').textContent=e.hora.replace('T',' ');
@@ -102,7 +131,7 @@ function pintarEstado(e){
  }else{
   $('agua').textContent=e.agua.toFixed(0)+' %';
   $('barraAIn').style.width=Math.max(0,Math.min(100,e.agua))+'%';
-  $('aguax').textContent=e.agua<=20?'⚠️ Agua baja':'';
+  $('aguax').textContent=e.agua<=20?'⚠️ Agua baja':(camInfo&&camInfo.estado!=='ok'?'Último valor válido · ahora: '+motivoAgua():'');
  }
 }
 
@@ -144,6 +173,8 @@ function conectar(){
     if(c.dispensador===false)t+=' · sin enlace local con el dispensador (usa la nube)';
     $('camx').textContent=t+' · señal '+c.rssi+' dBm';
     if($('agua').textContent==='N/D')$('aguax').textContent=motivoAgua();
+    else if(c.estado!=='ok')$('aguax').textContent='Último valor válido · ahora: '+motivoAgua();
+    else $('aguax').textContent=$('aguax').textContent.startsWith('Último')?'':$('aguax').textContent;
    }catch(x){}
   }else if(topic===T+'estado'){
    try{pintarEstado(JSON.parse(s))}catch(x){}
