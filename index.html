@@ -68,7 +68,15 @@ img{width:100%;border-radius:8px;background:#ddd;min-height:60px;margin-top:8px}
 <script>
 const T='dispensador/';
 const $=id=>document.getElementById(id);
-let cli=null,fotoURL=null,enDisp=false,ultEstado=0;
+let cli=null,fotoURL=null,enDisp=false,ultEstado=0,camInfo=null,camOn=null;
+// Motivos que envia la camara cuando no puede dar un porcentaje
+const MOTIVO={ok:'Midiendo',sin_calibrar:'Falta calibrar la cámara (lleno y vacío)',sin_reflejo:'No se ve el reflejo del LED: ¿bidón vacío o falta luz?',fuera_trayectoria:'Brillo extraño, medida descartada',sin_borde:'No se ve la línea del agua',inconsistente:'Medida inestable (reflejos o el gato)',confirmando:'Confirmando una bajada brusca…',sin_imagen:'La cámara no pudo tomar la imagen',roi_invalida:'Zona de análisis mal configurada',iniciando:'Iniciando…',error:'Error al medir'};
+function motivoAgua(){
+ if(camOn===false)return 'Cámara sin conexión';
+ if(!camInfo)return 'Esperando datos de la cámara…';
+ return MOTIVO[camInfo.estado]||camInfo.estado;
+}
+function pintarAguaND(){ $('agua').textContent='N/D';$('barraAIn').style.width='0';$('aguax').textContent=motivoAgua(); }
 
 function msg(t){$('msg').textContent=t;setTimeout(()=>{if($('msg').textContent===t)$('msg').textContent=''},4000)}
 function setConn(t,ok){$('conn').textContent=t;$('conn').className=ok?'ok':'mal'}
@@ -90,8 +98,7 @@ function pintarEstado(e){
  }
  enDisp=d;
  if(e.agua===null||e.agua===undefined){
-  $('agua').textContent='N/D';$('barraAIn').style.width='0';
-  $('aguax').textContent='La cámara no ha reportado en 5 min';
+  pintarAguaND();
  }else{
   $('agua').textContent=e.agua.toFixed(0)+' %';
   $('barraAIn').style.width=Math.max(0,Math.min(100,e.agua))+'%';
@@ -129,10 +136,14 @@ function conectar(){
   if(topic===T+'online'){
    $('online').textContent=s==='1'?'🟢 En línea':'🔴 Sin conexión';
   }else if(topic===T+'cam/online'){
-   $('camOnline').textContent=s==='1'?'🟢 En línea':'🔴 Sin conexión';
+   camOn=s==='1';
+   $('camOnline').textContent=camOn?'🟢 En línea':'🔴 Sin conexión';
   }else if(topic===T+'cam/info'){
-   try{const c=JSON.parse(s);
-    $('camx').textContent='Nivel medido '+c.pct+' % · confianza '+Math.round(100*Math.max(0,c.conf))+' % · señal '+c.rssi+' dBm';
+   try{camInfo=JSON.parse(s);const c=camInfo;
+    let t=c.estado==='ok'?('Nivel '+c.pct+' % · confianza '+Math.round(100*Math.max(0,c.conf))+' %'):motivoAgua();
+    if(c.dispensador===false)t+=' · sin enlace local con el dispensador (usa la nube)';
+    $('camx').textContent=t+' · señal '+c.rssi+' dBm';
+    if($('agua').textContent==='N/D')$('aguax').textContent=motivoAgua();
    }catch(x){}
   }else if(topic===T+'estado'){
    try{pintarEstado(JSON.parse(s))}catch(x){}
