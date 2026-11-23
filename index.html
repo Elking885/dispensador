@@ -125,6 +125,9 @@ function pintarEstado(e){
  }else if(enDisp&&e.disp_g!==undefined){
   $('gx').textContent='Última ración: '+e.disp_g.toFixed(1)+' g';
  }
+ // Tope del plato (70 g): el ESP32 no abre la compuerta si el plato ya esta lleno
+ if(!d&&e.bloqueado)$('gx').textContent='⛔ Plato con '+e.max_plato+' g o más: la compuerta no se abrió';
+ else if(!d&&e.plato_lleno)$('gx').textContent='Plato lleno (máx '+e.max_plato+' g)';
  enDisp=d;
  if(e.agua===null||e.agua===undefined){
   pintarAguaND();
