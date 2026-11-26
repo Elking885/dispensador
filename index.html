@@ -125,9 +125,12 @@ function pintarEstado(e){
  }else if(enDisp&&e.disp_g!==undefined){
   $('gx').textContent='Última ración: '+e.disp_g.toFixed(1)+' g';
  }
- // Tope del plato (70 g): el ESP32 no abre la compuerta si el plato ya esta lleno
- if(!d&&e.bloqueado)$('gx').textContent='⛔ Plato con '+e.max_plato+' g o más: la compuerta no se abrió';
- else if(!d&&e.plato_lleno)$('gx').textContent='Plato lleno (máx '+e.max_plato+' g)';
+ // Tope del plato: el ESP32 cierra al llegar a "objetivo_plato" y no abre si ya esta cerca.
+ // "max_plato" es la capacidad fisica: si se supera, el ESP32 marca alerta.
+ const obj=e.objetivo_plato!==undefined?e.objetivo_plato:e.max_plato;
+ if(!d&&e.excedido)$('gx').textContent='⚠️ El plato supera su capacidad ('+e.max_plato+' g): no se abrirá';
+ else if(!d&&e.bloqueado)$('gx').textContent='⛔ El plato ya tiene comida suficiente (objetivo '+obj+' g): la compuerta no se abrió';
+ else if(!d&&e.plato_lleno)$('gx').textContent='Plato lleno ('+obj+' g)';
  enDisp=d;
  if(e.agua===null||e.agua===undefined){
   pintarAguaND();
